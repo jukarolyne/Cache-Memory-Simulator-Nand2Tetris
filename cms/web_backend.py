@@ -60,6 +60,96 @@ Access = namedtuple("Access", ["instr", "size", "addr"])
 
 
 # ---------------------------------------------------------------------------
+# HACK Language Converter (nand2tetris -> mem_sequence)
+# ---------------------------------------------------------------------------
+
+class HackConverter:
+    """Converts Hack assembly code to memory access sequences."""
+    
+    def __init__(self):
+        self.current_addr = 0
+        self.sequences = []
+    
+    def parse_hack_code(self, code: str) -> List[str]:
+        """
+        Parse Hack assembly and generate memory sequences.
+        
+        Returns list of strings in format: "Read 4 0xADDR" or "Write 4 0xADDR"
+        """
+        self.sequences = []
+        lines = code.split('\n')
+        
+        for line in lines:
+            # Clean line
+            line = line.strip()
+            
+            # Remove comments
+            if '//' in line:
+                line = line.split('//')[0].strip()
+            
+            # Skip empty lines
+            if not line:
+                continue
+            
+            # Handle A-instruction: @value
+            if line.startswith('@'):
+                try:
+                    # Extract the value (can be decimal or symbol)
+                    value_str = line[1:].strip()
+                    # Try to parse as hex or decimal
+                    if value_str.lower().startswith('0x'):
+                        self.current_addr = int(value_str, 16)
+                    else:
+                        # Try decimal first, then assume it's a symbol reference (use as decimal)
+                        self.current_addr = int(value_str, 10)
+                except ValueError:
+                    # If not a number, treat as symbol (default to 0 or skip)
+                    continue
+                continue
+            
+            # Handle C-instruction (dest=comp;jump)
+            # Format: [dest=]comp[;jump]
+            
+            # Check for memory operations
+            if 'M' in line:
+                # Memory write: M=... (something writes to memory)
+                if '=' in line:
+                    dest_part = line.split('=')[0].strip()
+                    if 'M' in dest_part:
+                        # This is M=something (write to memory)
+                        self.sequences.append(f"Write 4 0x{self.current_addr:X}")
+                        continue
+                
+                # Memory read: something=M (something reads from memory)
+                if '=' in line:
+                    comp_part = line.split('=')[1].split(';')[0].strip()
+                    if 'M' in comp_part:
+                        # This is dest=M (read from memory)
+                        self.sequences.append(f"Read 4 0x{self.current_addr:X}")
+                        continue
+        
+        return self.sequences
+
+
+def convert_hack_to_sequence(hack_code: str) -> Tuple[bool, List[str], str]:
+    """
+    Convert Hack code to memory sequence.
+    
+    Returns (success, sequences, error_message)
+    """
+    try:
+        converter = HackConverter()
+        sequences = converter.parse_hack_code(hack_code)
+        
+        if not sequences:
+            return False, [], "No memory operations found in Hack code"
+        
+        return True, sequences, ""
+    except Exception as e:
+        return False, [], f"Conversion error: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
 # Security utilities
 # ---------------------------------------------------------------------------
 
@@ -747,6 +837,22 @@ def api_run_simulation():
     sequence_name = (data.get("sequence_name") or "uploaded_sequence").strip()
     sequence_text = data.get("sequence_text") or ""
 
+    # Check if this is Hack assembly code (not a sequence file)
+    # Detect by looking for Hack assembly patterns: @, =, ;
+    is_hack_code = False
+    for line in sequence_text.splitlines():
+        clean = line.strip()
+        if clean.startswith('@') or '=' in clean or clean.startswith('('):
+            is_hack_code = True
+            break
+    
+    # If it's Hack code, convert it to sequences first
+    if is_hack_code:
+        success, sequences, error_msg = convert_hack_to_sequence(sequence_text)
+        if not success:
+            return jsonify({"ok": False, "error": f"Hack conversion failed: {error_msg}"}), 400
+        sequence_text = "\n".join(sequences)
+
     lines = []
     for line in sequence_text.splitlines():
         line = (
@@ -952,6 +1058,147 @@ def api_hierarchy_demo():
     except Exception as e:
         return jsonify({"ok": False, "error": f"Hierarchy demo failed: {e}"}), 500
     return jsonify({"ok": True, **out})
+
+
+# --- Hack Converter ---
+
+@app.post("/api/convert-hack")
+def api_convert_hack():
+    """
+    Convert Hack assembly code (nand2tetris) to memory access sequences.
+    
+    POST body:
+    {
+        "hack_code": "string containing Hack assembly code"
+    }
+    
+    Returns:
+    {
+        "ok": true/false,
+        "sequences": ["Read 4 0x0", "Write 4 0x10", ...],
+        "sequence_text": "Read 4 0x0\nWrite 4 0x10\n...",
+        "count": number of sequences,
+        "error": "error message if ok=false"
+    }
+    """
+    username, role = require_auth(request)
+    if not username:
+        return jsonify({"ok": False, "error": "Authentication required"}), 401
+    
+    data = request.get_json(force=True, silent=True) or {}
+    hack_code = data.get("hack_code") or ""
+    
+    if not hack_code.strip():
+        return jsonify({"ok": False, "error": "Hack code is empty"}), 400
+    
+    success, sequences, error_msg = convert_hack_to_sequence(hack_code)
+    
+    if not success:
+        return jsonify({
+            "ok": False,
+            "error": error_msg,
+            "sequences": [],
+            "count": 0
+        }), 400
+    
+    sequence_text = "\n".join(sequences)
+    
+    return jsonify({
+        "ok": True,
+        "sequences": sequences,
+        "sequence_text": sequence_text,
+        "count": len(sequences),
+        "error": ""
+    })
+
+
+@app.post("/api/convert-hack-file")
+def api_convert_hack_file():
+    """
+    Convert Hack assembly file (nand2tetris) to memory access sequences.
+    
+    Accepts multipart/form-data with file upload.
+    
+    Form data:
+    - file: .asm or .hack file containing Hack assembly code
+    
+    Returns:
+    {
+        "ok": true/false,
+        "sequences": ["Read 4 0x0", "Write 4 0x10", ...],
+        "sequence_text": "Read 4 0x0\nWrite 4 0x10\n...",
+        "count": number of sequences,
+        "filename": original filename,
+        "error": "error message if ok=false"
+    }
+    """
+    username, role = require_auth(request)
+    if not username:
+        return jsonify({"ok": False, "error": "Authentication required"}), 401
+    
+    # Check if file was uploaded
+    if 'file' not in request.files:
+        return jsonify({
+            "ok": False,
+            "error": "No file uploaded. Use 'file' field in form-data"
+        }), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({"ok": False, "error": "No file selected"}), 400
+    
+    # Validate file extension
+    allowed_extensions = {'.asm', '.hack', '.txt'}
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in allowed_extensions:
+        return jsonify({
+            "ok": False,
+            "error": f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+        }), 400
+    
+    # Read file content
+    try:
+        hack_code = file.read().decode('utf-8')
+    except UnicodeDecodeError:
+        return jsonify({
+            "ok": False,
+            "error": "File must be text encoded in UTF-8"
+        }), 400
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"Failed to read file: {str(e)}"
+        }), 500
+    
+    if not hack_code.strip():
+        return jsonify({
+            "ok": False,
+            "error": "File is empty"
+        }), 400
+    
+    # Convert
+    success, sequences, error_msg = convert_hack_to_sequence(hack_code)
+    
+    if not success:
+        return jsonify({
+            "ok": False,
+            "error": error_msg,
+            "sequences": [],
+            "count": 0,
+            "filename": file.filename
+        }), 400
+    
+    sequence_text = "\n".join(sequences)
+    
+    return jsonify({
+        "ok": True,
+        "sequences": sequences,
+        "sequence_text": sequence_text,
+        "count": len(sequences),
+        "filename": file.filename,
+        "error": ""
+    })
 
 
 if __name__ == "__main__":
