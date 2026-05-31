@@ -1,138 +1,266 @@
-# CacheMap Web Simulator 
-**CacheMap** is a full-stack educational tool designed to visualize and simulate CPU Cache Memory behavior. It combines a flexible **Python software simulator** with real **Verilog hardware simulation**, providing a comprehensive environment for understanding computer architecture concepts like Hit/Miss logic, Replacement Policies (LRU, FIFO), and Hierarchical Caching (L1/L2).
+# CacheMap: Simulador de Cache Memory
 
-## 📸 Interface Screenshots
+**CacheMap** é uma ferramenta educacional interativa para simular e visualizar o comportamento de Cache Memory (L1, L2) em uma CPU. Desenvolvida para estudantes aprenderem sobre Hits/Misses, Políticas de Substituição (LRU, FIFO), e Hierarquia de Memória.
 
-### 1. Main Dashboard
-*Configure cache parameters, upload trace files, and view real-time hit/miss statistics.*
-![Main Dashboard](Assets/Simulation%20run.png)
+## 📚 O que você vai aprender
 
-### 2. Interactive Logic Diagram
-*Visualizes the hardware logic for Hit/Miss detection. Wires light up (green/red) based on the selected Truth Table row.*
-![Logic Diagram for Miss](Assets/Logic%20Circuit%201.jpg)
-![Logic Diagram for Hit](Assets/Logic%20Circuit%202.jpg)
+- **Hit e Miss:** Entender quando a CPU encontra dados no cache e quando precisa buscar da memória
+- **Políticas de Substituição:** Comparar LRU (Least Recently Used) e FIFO (First In, First Out)
+- **Configuração de Cache:** Tamanho, Tamanho de Bloco, Associatividade
+- **Hierarquia de Memória:** Interação entre L1, L2 e Memória Principal
+- **Análise Visual:** Diagramas lógicos interativos que mostram o fluxo de dados em tempo real
 
-### 3. Hardware Verification (Verilog)
-*Shows the raw output logs from the Icarus Verilog simulation running on the server.*
-![Verilog Logs](Assets/Hardware%20Simulation%20logs%20(Verilog%20TestBench).jpg)
+## 🛠️ Pré-requisitos
 
-**For examining other screenshots visit the Assets folder**
-(https://github.com/Sarvagya-24-chaturvedi/Cache-Memory-Simulator/tree/main/Assets)
+Você precisa ter **Python 3.7 ou superior** instalado. As dependências Python serão instaladas automaticamente via `pip`.
 
-## 🚀 Key Features
+### Windows
 
-* **Dual Simulation Engine:**
-    * **Software Mode:** Instant simulation of cache behavior using Python. Supports variable cache sizes, block sizes, associativity, and replacement policies.
-    * **Hardware Mode:** Compiles and runs actual **Verilog** testbenches on the server using **Icarus Verilog**, generating accurate timing diagrams.
-* **Interactive Visualizations:**
-    * **Logic Diagram:** A dynamic SVG circuit that lights up to show how Tag Matches, Valid bits, and AND/MUX gates determine a Hit or Miss.
-    * **Waveform Viewer:** Integrated **WaveDrom** viewer for digital timing analysis directly in the browser.
-* **Hierarchy Demo:** Simulates the interaction between L1 Cache, L2 Cache, and Main Memory.
-* **Secure Admin Panel:** Manage users and view obfuscated activity logs.
-* **Tamper-Proof Security:** Uses HMAC (Hash-based Message Authentication Code) to ensure user data integrity.
+1. **Instale Python:**
+   - Acesse [python.org](https://www.python.org/downloads/)
+   - Download a versão mais recente para Windows
+   - **Importante:** Durante a instalação, marque a opção "Add Python to PATH"
 
----
+2. **Verifique a instalação:**
+   ```bash
+   python --version
+   pip --version
+   ```
 
-## 🛠️ Prerequisites
+### Linux (Ubuntu/Debian)
 
-Before running the application, ensure you have the following installed:
-
-### 1. Python (Backend)
-Required to run the Flask server.
-* [Download Python](https://www.python.org/downloads/)
-
-### 2. Icarus Verilog (Hardware Simulation)
-Required to compile the Verilog (`.v`) files.
-* **Windows:** [Download Icarus Verilog](https://bleyer.org/icarus/) (Ensure you add it to your system PATH during installation).
-* **Linux:** `sudo apt-get install iverilog`
-* **macOS:** `brew install icarus-verilog`
-
-### 3. GTKWave (Optional)
-Recommended if you want to download and view the `.vcd` waveform files offline.
-
----
-
-## 📦 Installation & Setup
-
-1.  **Clone the Repository**
-    ```bash
-    git clone [https://github.com/Sarvagya-24-chaturvedi/Cache-Memory-Simulator.git](https://github.com/Sarvagya-24-chaturvedi/Cache-Memory-Simulator.git)
-    cd Cache-Memory-Simulator
-    ```
-
-2.  **Install Python Dependencies**
-    ```bash
-    pip install flask
-    ```
-
-3.  **Run the Application**
-    ```bash
-    python app.py
-    ```
-
-4.  **Access the Dashboard**
-    Open your browser and navigate to:
-    `http://127.0.0.1:5000`
-
-    * **Default Admin Credentials:**
-        * **Username:** `admin`
-        * **Password:** `admin`
-    * *(Note: Change these immediately after logging in for the first time)*
-
----
-
-## 🔐 Security System & Auto-Generated Files
-
-This application implements a file-based integrity system to secure user data. When you run the application for the first time, the following critical files will be **automatically created** in the root directory:
-
-1.  **`app_secret.bin`**
-    * **What it is:** A cryptographically strong random binary key (32 bytes).
-    * **Usage:** This key is used to sign the session tokens and compute the HMAC for the user database.
-    * **Important:** **DO NOT DELETE** this file. If deleted, all existing user sessions and the user database integrity check will fail.
-
-2.  **`users.json`**
-    * **What it is:** The database storing user credentials (usernames, hashed passwords, and roles).
-    * **Usage:** It acts as the persistent storage for the login system.
-
-3.  **`users.hmac`**
-    * **What it is:** A text file containing a SHA-256 hash signature of the `users.json` file.
-    * **Usage:** Every time the application loads, it calculates the hash of `users.json` using the `app_secret.bin`. It compares this new hash with the content of `users.hmac`.
-    * **Why?** This prevents manual tampering. If someone manually edits `users.json` to change their role to "admin", the hashes won't match, and the secure system will reject the data to prevent unauthorized access.
-
----
-
-## 📂 Project Structure
-
-```text
-CacheMap-Simulator/
-├── app.py                 # Main Flask server & API logic
-├── binary_store.py        # Helper module for binary file operations
-├── cache_logic.v          # Verilog module: Cache Controller & Hit Logic
-├── cache_sim_tb.v         # Verilog testbench: Generates signals & waveforms
-├── app_secret.bin         # (Auto-generated) Security key
-├── users.json             # (Auto-generated) User database
-├── users.hmac             # (Auto-generated) Integrity signature
-├── static/
-│   ├── style.css          # The Neon/Cyberpunk theme styles
-│   └── app.js             # Frontend logic (Charts, WaveDrom, API calls)
-└── templates/
-    └── index.html         # Main dashboard interface
+Python geralmente já vem instalado. Verifique:
+```bash
+python3 --version
+pip3 --version
 ```
-## 🎮 How to Use
-1. **Software Simulation**
 
- - Upload a .txt sequence file (e.g., read 4 0x10, write 4 0x20).
- - Set Cache Size, Block Size, and Associativity.
- - Click Run Simulation.
- - View results in the Results tab (Hit Rate, Misses) and interact with the Logic Diagram.
+Se não estiver instalado:
+```bash
+sudo apt-get update
+sudo apt-get install python3 python3-pip
+```
 
-2. **Hardware (Verilog) Simulation**
+### macOS
 
- - Click Run Verilog TB in the left panel.
- - The server compiles cache_logic.v and cache_sim_tb.v.
- - Go to the Hardware (Logs) tab to see the terminal output.
- - Go to the Waveform Viewer tab to see the timing diagram visualized.
- - (Optional) Download the .vcd file to view in GTKWave.
+1. **Com Homebrew (recomendado):**
+   ```bash
+   brew install python3
+   ```
+
+2. **Ou baixe direto:**
+   - Acesse [python.org](https://www.python.org/downloads/) e baixe para macOS
+
+Verifique a instalação:
+```bash
+python3 --version
+pip3 --version
+```
+
+## 📦 Instalação e Configuração
+
+### Passo 1: Clonar o Repositório
+
+```bash
+git clone https://github.com/jukarolyne/Cache-Memory-Simulator-Nand2Tetris.git
+cd Cache-Memory-Simulator-Nand2Tetris
+```
+
+### Passo 2: Instalar Dependências
+
+#### Windows (PowerShell ou CMD)
+```bash
+pip install -r requirements.txt
+```
+
+#### Linux/macOS (Terminal)
+```bash
+pip3 install -r requirements.txt
+```
+
+### Passo 3: Executar a Aplicação
+
+#### Windows (PowerShell ou CMD)
+```bash
+python cms/web_backend.py
+```
+
+#### Linux/macOS (Terminal)
+```bash
+python3 cms/web_backend.py
+```
+
+Você deverá ver uma mensagem como:
+```
+ * Running on http://127.0.0.1:5000
+ * WARNING: This is a development server. Do not use it in production.
+```
+
+### Passo 4: Acessar o Simulador
+
+Abra seu navegador e acesse:
+```
+http://127.0.0.1:5000
+```
+
+**Crie sua conta de usuário na primeira execução e comece a simular!**
+
+## 📂 Estrutura do Projeto
+
+```
+Cache-Memory-Simulator/
+├── app.py                 # Servidor Flask (backend)
+├── binary_store.py        # Módulo auxiliar
+├── static/
+│   ├── style.css          # Estilos da interface
+│   └── app.js             # Lógica do frontend
+├── templates/
+│   └── index.html         # Interface principal
+├── requirements.txt       # Dependências Python
+└── README.md              # Este arquivo
+```
+
+## 🎮 Guia de Uso: Simulando Programas em Assembly
+
+### 1. Preparar seu Arquivo Assembly
+
+Crie um arquivo com extensão `.asm` com suas instruções. Exemplo: `programa.asm`
+
+```asm
+// programa.asm - Leitura e escrita em memória
+@16384
+M=1      // Escreve 1 na memória (endereço 16384)
+
+@16385
+M=2      // Escreve 2 na memória (endereço 16385)
+
+@16384
+D=M      // Lê valor da memória (endereço 16384)
+
+@16640
+M=D      // Escreve o valor lido em outro endereço
+```
+
+**Formatos suportados:**
+- Código Hack Assembly (`.asm`, `.hack`): contém instruções com `@`, `M=`, `D=`, etc.
+- Sequência de memória (`.txt`): lista de acessos já compilada
+
+### 2. Usar o Simulador
+
+O simulador aceita arquivos `.asm` (Hack Assembly) e `.txt` (sequência de memória) automaticamente. Basta fazer upload e clicar em "Run Simulation"!
+
+**Próxima etapa:** Acessar o dashboard do simulador
+
+### 3. Acessar o Dashboard
+
+1. Abra o navegador em `http://127.0.0.1:5000`
+2. Crie sua conta de usuário
+3. Faça login
+
+### 4. Configurar a Simulação
+
+Na aba **Simulation**:
+
+1. **Selecione seu arquivo:** Clique em "Choose File" e selecione seu arquivo `.asm` ou `.txt`
+2. **Configure os parâmetros de cache:**
+   - **Cache Size:** Tamanho total em bytes (ex: 256, 512, 1024)
+   - **Block Size:** Tamanho do bloco em bytes (ex: 4, 8, 32, 64)
+   - **Associativity:** 1 (Direct Mapped), 2, 4, 8, etc.
+   - **Replacement Policy:** LRU (Least Recently Used) ou FIFO (First In First Out)
+
+3. **Clique em "Run Simulation"**
+
+O simulador irá:
+- Detectar se é código Hack Assembly
+- Converter automaticamente para sequência de memória
+- Executar a simulação de cache
+- Exibir resultados em tempo real
+
+### 5. Analisar os Resultados
+
+Na aba **Results**, você verá:
+
+- **Hit Rate:** Percentual de hits (quanto mais alto, melhor!)
+- **Miss Rate:** Percentual de misses
+- **Total Hits:** Número total de hits
+- **Total Misses:** Número total de misses
+- **Access Trace:** Detalhamento de cada acesso à memória
+
+### 6. Interagir com o Diagrama Lógico
+
+Na aba **Logic Diagram**:
+
+- Os circuitos ficam **verdes para HIT** e **vermelhos para MISS**
+- Selecione linhas da tabela de verdade para ver em tempo real como os sinais mudam
+- Entenda visualmente como tag matching, bits de validade e portas lógicas determinam um HIT ou MISS
+
+## � Formatos de Entrada Suportados
+
+### Formato 1: Código Hack Assembly (.asm)
+
+O simulador aceita código assembly Hack completo:
+
+```asm
+// Escrita em memória
+@16384
+M=1
+
+// Leitura de memória
+@16384
+D=M
+
+// Escrita do resultado
+@16640
+M=D
+```
+
+**Instruções reconhecidas:**
+- `@valor` - Carrega endereço no registrador A
+- `M=expressão` - Escreve na memória (gera acesso de `write`)
+- `D=M` - Lê da memória (gera acesso de `read`)
+- `(LABEL)` - Define um rótulo
+- `0;JMP` - Instrumento de salto
+
+**O simulador converte automaticamente para sequências de memória!**
+
+### Formato 2: Sequência de Memória Direta (.txt)
+
+Se preferir, pode fornecer uma sequência de memória já compilada:
+
+```
+Read 4 0x4000
+Write 4 0x4000
+Read 4 0x4004
+Write 4 0x4004
+Read 4 0x4000
+```
+
+**Formato:** `[operação] [tamanho] [endereço_hex]`
+- **operação:** `Read` ou `Write` (case-insensitive)
+- **tamanho:** número de bytes acessados (ex: 1, 2, 4, 8)
+- **endereço_hex:** endereço em hexadecimal (ex: 0x0, 0x1000, 0x10000)
+
+## ❓ Perguntas
+
+**P: Preciso gerar um arquivo de sequência de memória antes de usar o simulador?**  
+R: **Não!** O simulador detecta automaticamente se seu arquivo é código Hack Assembly e converte para sequência de memória. Basta fazer upload do `.asm` e clicar em "Run Simulation".
+
+**P: Qual formato usar: .asm ou .txt?**  
+R: Use `.asm` se tiver código assembly completo. Use `.txt` apenas se já tiver a sequência de memória compilada. O simulador aceita ambos!
+
+**P: O simulador não inicia - "Connection refused"**  
+R: O servidor Flask pode não estar rodando ou ainda está iniciando. Tente:
+1. Verifique se você executou `python cms/web_backend.py` (ou `python3 cms/web_backend.py` no macOS/Linux)
+2. Aguarde 3-5 segundos após iniciar o servidor
+3. Atualize a página no navegador (F5 ou Ctrl+R)
+4. Verifique a saída do terminal para mensagens de erro
+5. Se a porta 5000 estiver em uso, procure fechar outros programas usando essa porta
 
 ## 📝 License
 This project is open-source and available under the MIT License.
+
+## 🙏 Créditos
+
+Este projeto é baseado no trabalho original de [Sarvagya Chaturvedi](https://github.com/Sarvagya-24-chaturvedi/Cache-Memory-Simulator). Foi adaptado para a disciplina de Elementos de Sistemas Computacionais, presente no curso de Sistemas de Informação da Universidade Federal Rural de Pernambuco (UFRPE).
+
+**Repositório Original:** https://github.com/Sarvagya-24-chaturvedi/Cache-Memory-Simulator
