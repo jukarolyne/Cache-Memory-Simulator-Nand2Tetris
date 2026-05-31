@@ -117,7 +117,7 @@ class HackConverter:
                     dest_part = line.split('=')[0].strip()
                     if 'M' in dest_part:
                         # This is M=something (write to memory)
-                        self.sequences.append(f"Write 4 0x{self.current_addr:X}")
+                        self.sequences.append(f"Write 4 {self.current_addr}")
                         continue
                 
                 # Memory read: something=M (something reads from memory)
@@ -125,7 +125,7 @@ class HackConverter:
                     comp_part = line.split('=')[1].split(';')[0].strip()
                     if 'M' in comp_part:
                         # This is dest=M (read from memory)
-                        self.sequences.append(f"Read 4 0x{self.current_addr:X}")
+                        self.sequences.append(f"Read 4 {self.current_addr}")
                         continue
         
         return self.sequences
@@ -133,20 +133,20 @@ class HackConverter:
 
 def convert_hack_to_sequence(hack_code: str) -> Tuple[bool, List[str], str]:
     """
-    Convert Hack code to memory sequence.
+    Converte o código Hack para sequencia de memoria
     
-    Returns (success, sequences, error_message)
+    Retornar (sucesso, sequencia, mensagem_erro)
     """
     try:
         converter = HackConverter()
         sequences = converter.parse_hack_code(hack_code)
         
         if not sequences:
-            return False, [], "No memory operations found in Hack code"
+            return False, [], "Sem operações de memória encontrada em código Hack"
         
         return True, sequences, ""
     except Exception as e:
-        return False, [], f"Conversion error: {str(e)}"
+        return False, [], f"Erro de conversão: {str(e)}"
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +405,7 @@ class CacheSimulator:
 
         # record for visualization
         self.truth_table.append(
-            [hex(addr), int(tag), int(s), int(valid), int(tag_match), result]
+            [str(addr), int(tag), int(s), int(valid), int(tag_match), result]
         )
 
         # Additionally, write a binary representation for the "sequence" file
@@ -812,6 +812,13 @@ def api_admin_delete_user(username: str):
 
 # --- Simulation Endpoints ---
 
+def format_address(addr: int, fmt: str) -> str:
+    """Format address as decimal or hexadecimal."""
+    if fmt.lower() == "hex":
+        return f"0x{addr:X}"
+    return str(addr)
+
+
 @app.post("/api/run_simulation")
 def api_run_simulation():
     """
@@ -836,6 +843,7 @@ def api_run_simulation():
     hierarchy = bool(data.get("hierarchy", False))
     sequence_name = (data.get("sequence_name") or "uploaded_sequence").strip()
     sequence_text = data.get("sequence_text") or ""
+    address_format = (data.get("address_format") or "decimal").lower()
 
     # Check if this is Hack assembly code (not a sequence file)
     # Detect by looking for Hack assembly patterns: @, =, ;
@@ -889,13 +897,21 @@ def api_run_simulation():
         results = []
         for ac in lines:
             res = sim.access(ac.instr, ac.size, ac.addr, seq_name=sequence_name)
-            results.append({"instr": ac.instr, "addr": hex(ac.addr), "result": res})
+            results.append({"instr": ac.instr, "addr": format_address(ac.addr, address_format), "result": res})
+        
+        # Format truth table addresses
+        truth_table_formatted = []
+        for row in sim.truth_table:
+            # row = [addr_str, tag, set, valid, tag_match, output]
+            addr_val = int(row[0])  # row[0] is already a string
+            truth_table_formatted.append([format_address(addr_val, address_format), row[1], row[2], row[3], row[4], row[5]])
+        
         return jsonify({
             "ok": True,
             "stats_text": sim.stats_text(),
             "sets_text": sim.dump_sets_text(),
             "results": results,
-            "truth_table": sim.truth_table,
+            "truth_table": truth_table_formatted,
         })
 
     # 2. Hierarchical simulation: L1 -> L2 -> MainMemory
@@ -941,7 +957,7 @@ def api_run_simulation():
         
         results.append({
             "instr": ac.instr,
-            "addr": hex(ac.addr),
+            "addr": format_address(ac.addr, address_format),
             "l1": "HIT" if l1_hit else "MISS",
             "l2": "HIT" if l2_hit else "MISS",
         })

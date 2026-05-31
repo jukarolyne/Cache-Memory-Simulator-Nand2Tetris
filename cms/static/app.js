@@ -201,6 +201,7 @@ function setupSimulation() {
       const blockSize = document.getElementById("block-size").value;
       const assoc = document.getElementById("assoc").value;
       const policy = document.getElementById("policy") ? document.getElementById("policy").value : "LRU";
+      const addressFormat = document.getElementById("address-format") ? document.getElementById("address-format").value : "decimal";
 
       try {
         const data = await api("/api/run_simulation", {
@@ -212,7 +213,8 @@ function setupSimulation() {
             policy: policy,
             sequence_name: seqName,
             sequence_text: text,
-            hierarchy: false // Default to single level for this button
+            hierarchy: false, // Default to single level for this button
+            address_format: addressFormat
           })
         });
         if (!data.ok) {
