@@ -78,6 +78,9 @@ function setupLogin() {
         authToken = data.token;
         currentRole = data.role;
         currentUser = data.username;
+        localStorage.setItem("authToken", authToken);
+        localStorage.setItem("currentRole", currentRole);
+        localStorage.setItem("currentUser", currentUser);
         const userInfo = document.getElementById("user-info");
         if(userInfo) userInfo.textContent = `${currentUser} (${currentRole})`;
         
@@ -138,6 +141,9 @@ function setupLogout() {
       authToken = null;
       currentRole = null;
       currentUser = null;
+      localStorage.removeItem("authToken");
+      localStorage.removeItem("currentRole");
+      localStorage.removeItem("currentUser");
       switchView("login-view");
     });
   }
@@ -201,6 +207,7 @@ function setupSimulation() {
       const blockSize = document.getElementById("block-size").value;
       const assoc = document.getElementById("assoc").value;
       const policy = document.getElementById("policy") ? document.getElementById("policy").value : "LRU";
+      const addressFormat = document.getElementById("address-format") ? document.getElementById("address-format").value : "decimal";
 
       try {
         const data = await api("/api/run_simulation", {
@@ -212,7 +219,8 @@ function setupSimulation() {
             policy: policy,
             sequence_name: seqName,
             sequence_text: text,
-            hierarchy: false // Default to single level for this button
+            hierarchy: false, // Default to single level for this button
+            address_format: addressFormat
           })
         });
         if (!data.ok) {
@@ -643,6 +651,19 @@ function animateNeon() {
 // ----------------------------------------------------
 
 window.addEventListener("DOMContentLoaded", () => {
+  // Restore token from localStorage if available
+  authToken = localStorage.getItem("authToken");
+  currentRole = localStorage.getItem("currentRole");
+  currentUser = localStorage.getItem("currentUser");
+  
+  // Update UI if already logged in
+  if (authToken) {
+    const userInfo = document.getElementById("user-info");
+    if (userInfo) userInfo.textContent = `${currentUser} (${currentRole})`;
+    setTabs(currentRole);
+    switchView("main-view");
+  }
+  
   setupLogin();
   setupLogout();
   setupTabs();

@@ -60,6 +60,236 @@ Access = namedtuple("Access", ["instr", "size", "addr"])
 
 
 # ---------------------------------------------------------------------------
+# HACK Language Converter (nand2tetris -> mem_sequence)
+# ---------------------------------------------------------------------------
+
+class HackConverter:
+    """Converte codigo de linguagem assembly para sequencias de acesso de memoria com suporte a loop"""
+    
+    def __init__(self):
+        self.sequences = []
+        self.symbol_table = {}  # mapa de labels/variables para enderecos
+        self.memory = {}  # simulacao RAM
+        self.registers = {"A": 0, "D": 0}  # registradores A e D 
+        self.max_iterations = 10000  # previne loops infinitos
+        self.iteration_count = 0
+    
+    def parse_hack_code(self, code: str) -> List[str]:
+        """
+        Hack assembly com suporte a loop e geracao de sequencias de memoria.
+        simula a execucao e acesso a faixas de memoria.
+        retorna uma listra de strings em formato: "Read 4 ADDR" or "Write 4 ADDR"
+        """
+        self.sequences = []
+        lines = code.split('\n')
+        clean_lines = []
+        
+        # limpa as linhas e extrai os labels
+        for line in lines:
+            line = line.strip()
+            if '//' in line:
+                line = line.split('//')[0].strip()
+            if not line:
+                continue
+            
+            # (LABELS)
+            if line.startswith('(') and line.endswith(')'):
+                label = line[1:-1].strip()
+                self.symbol_table[label] = len(clean_lines)
+                continue
+            
+            clean_lines.append(line)
+        
+        # atribuir endereços as variaveis e executar
+        var_address = 16  # as variaveis começam no endereço 16 no Hack
+        pc = 0 
+        
+        # pre-processar para endereços de variaveis
+        for line in clean_lines:
+            if line.startswith('@'):
+                value_str = line[1:].strip()
+                # se eh um simbolo, nao um numero, atribui-lo em um endereco
+                if not value_str.isdigit() and value_str not in self.symbol_table:
+                    self.symbol_table[value_str] = var_address
+                    var_address += 1
+        
+        # executar simulacao
+        while pc < len(clean_lines) and self.iteration_count < self.max_iterations:
+            self.iteration_count += 1
+            line = clean_lines[pc]
+            
+            # instrucao-A: @valor
+            if line.startswith('@'):
+                value_str = line[1:].strip()
+                try:
+                    if value_str.lower().startswith('0x'):
+                        self.registers["A"] = int(value_str, 16)
+                    elif value_str.isdigit():
+                        self.registers["A"] = int(value_str)
+                    else:
+                        self.registers["A"] = self.symbol_table.get(value_str, 0)
+                except ValueError:
+                    self.registers["A"] = 0
+                pc += 1
+                continue
+            
+            # instrucao-C: dest=comp;jump
+            dest = ""
+            comp = line
+            jump = ""
+            
+            if '=' in line:
+                dest, comp = line.split('=', 1)
+                dest = dest.strip()
+            
+            if ';' in comp:
+                comp, jump = comp.split(';')
+                comp = comp.strip()
+                jump = jump.strip()
+            else:
+                comp = comp.strip()
+            
+            # salva valor
+            comp_value = self._compute(comp)
+            
+            # guarda no destino
+            if dest:
+                if 'A' in dest:
+                    self.registers["A"] = comp_value
+                if 'D' in dest:
+                    self.registers["D"] = comp_value
+                if 'M' in dest:
+                    # Write para memoria com endereco A
+                    addr = self.registers["A"]
+                    self.memory[addr] = comp_value
+                    self.sequences.append(f"Write 4 {addr}")
+            
+            # jump
+            if jump:
+                jumped = self._check_jump(comp_value, jump)
+                if jumped:
+                    # Jump para endereco guardado no registrador A 
+                    pc = self.registers["A"]
+                    # checagem de seguranca para evitar loops infinitos
+                    if pc >= len(clean_lines):
+                        pc = len(clean_lines)
+                else:
+                    pc += 1
+            else:
+                pc += 1
+        return self.sequences
+    
+    def _compute(self, comp: str) -> int:
+        """avalia uma expressao computacional."""
+        comp = comp.strip()
+        
+        # leitura de memoria
+        if comp == 'M':
+            addr = self.registers["A"]
+            self.sequences.append(f"Read 4 {addr}")
+            return self.memory.get(addr, 0)
+        
+        # operacoes nos registradores
+        if comp == 'D':
+            return self.registers["D"]
+        if comp == 'A':
+            return self.registers["A"]
+        if comp == '0':
+            return 0
+        if comp == '1':
+            return 1
+        if comp == '-1':
+            return -1
+        
+        # aritmetico
+        if '+' in comp:
+            parts = comp.split('+')
+            left = self._get_value(parts[0].strip())
+            right = self._get_value(parts[1].strip())
+            return left + right
+        if '-' in comp and not comp.startswith('-'):
+            parts = comp.split('-')
+            left = self._get_value(parts[0].strip())
+            right = self._get_value(parts[1].strip())
+            return left - right
+        
+        # operacoes bit a bit
+        if '&' in comp:
+            parts = comp.split('&')
+            left = self._get_value(parts[0].strip())
+            right = self._get_value(parts[1].strip())
+            return left & right
+        if '|' in comp:
+            parts = comp.split('|')
+            left = self._get_value(parts[0].strip())
+            right = self._get_value(parts[1].strip())
+            return left | right
+        if '!' in comp:
+            val = self._get_value(comp[1:].strip())
+            return ~val & 0xFFFF  # 16-bit NOT
+        
+        return 0
+    
+    def _get_value(self, expr: str) -> int:
+        """Pega o valor do registrador ou da memoria."""
+        expr = expr.strip()
+        if expr == 'D':
+            return self.registers["D"]
+        if expr == 'A':
+            return self.registers["A"]
+        if expr == 'M':
+            addr = self.registers["A"]
+            self.sequences.append(f"Read 4 {addr}")
+            return self.memory.get(addr, 0)
+        if expr == '0':
+            return 0
+        if expr == '1':
+            return 1
+        if expr == '-1':
+            return -1
+        try:
+            return int(expr)
+        except ValueError:
+            return 0
+    
+    def _check_jump(self, value: int, jump_type: str) -> bool:
+        """Checa se a condição de jump é conhecida."""
+        if jump_type == "JMP":
+            return True
+        if jump_type == "JEQ":
+            return value == 0
+        if jump_type == "JNE":
+            return value != 0
+        if jump_type == "JLT":
+            return value < 0
+        if jump_type == "JLE":
+            return value <= 0
+        if jump_type == "JGT":
+            return value > 0
+        if jump_type == "JGE":
+            return value >= 0
+        return False
+
+
+def convert_hack_to_sequence(hack_code: str) -> Tuple[bool, List[str], str]:
+    """
+    Converte o codigo Hack para sequencia de memoria
+    
+    Retornar (sucesso, sequencia, mensagem_erro)
+    """
+    try:
+        converter = HackConverter()
+        sequences = converter.parse_hack_code(hack_code)
+        
+        if not sequences:
+            return False, [], "Sem operações de memória encontrada em código Hack"
+        
+        return True, sequences, ""
+    except Exception as e:
+        return False, [], f"Erro de conversão: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
 # Security utilities
 # ---------------------------------------------------------------------------
 
@@ -315,7 +545,7 @@ class CacheSimulator:
 
         # record for visualization
         self.truth_table.append(
-            [hex(addr), int(tag), int(s), int(valid), int(tag_match), result]
+            [str(addr), int(tag), int(s), int(valid), int(tag_match), result]
         )
 
         # Additionally, write a binary representation for the "sequence" file
@@ -722,6 +952,13 @@ def api_admin_delete_user(username: str):
 
 # --- Simulation Endpoints ---
 
+def format_address(addr: int, fmt: str) -> str:
+    """Format address as decimal or hexadecimal."""
+    if fmt.lower() == "hex":
+        return f"0x{addr:X}"
+    return str(addr)
+
+
 @app.post("/api/run_simulation")
 def api_run_simulation():
     """
@@ -746,6 +983,23 @@ def api_run_simulation():
     hierarchy = bool(data.get("hierarchy", False))
     sequence_name = (data.get("sequence_name") or "uploaded_sequence").strip()
     sequence_text = data.get("sequence_text") or ""
+    address_format = (data.get("address_format") or "decimal").lower()
+
+    # Check if this is Hack assembly code (not a sequence file)
+    # Detect by looking for Hack assembly patterns: @, =, ;
+    is_hack_code = False
+    for line in sequence_text.splitlines():
+        clean = line.strip()
+        if clean.startswith('@') or '=' in clean or clean.startswith('('):
+            is_hack_code = True
+            break
+    
+    # If it's Hack code, convert it to sequences first
+    if is_hack_code:
+        success, sequences, error_msg = convert_hack_to_sequence(sequence_text)
+        if not success:
+            return jsonify({"ok": False, "error": f"Hack conversion failed: {error_msg}"}), 400
+        sequence_text = "\n".join(sequences)
 
     lines = []
     for line in sequence_text.splitlines():
@@ -783,13 +1037,21 @@ def api_run_simulation():
         results = []
         for ac in lines:
             res = sim.access(ac.instr, ac.size, ac.addr, seq_name=sequence_name)
-            results.append({"instr": ac.instr, "addr": hex(ac.addr), "result": res})
+            results.append({"instr": ac.instr, "addr": format_address(ac.addr, address_format), "result": res})
+        
+        # Format truth table addresses
+        truth_table_formatted = []
+        for row in sim.truth_table:
+            # row = [addr_str, tag, set, valid, tag_match, output]
+            addr_val = int(row[0])  # row[0] is already a string
+            truth_table_formatted.append([format_address(addr_val, address_format), row[1], row[2], row[3], row[4], row[5]])
+        
         return jsonify({
             "ok": True,
             "stats_text": sim.stats_text(),
             "sets_text": sim.dump_sets_text(),
             "results": results,
-            "truth_table": sim.truth_table,
+            "truth_table": truth_table_formatted,
         })
 
     # 2. Hierarchical simulation: L1 -> L2 -> MainMemory
@@ -835,7 +1097,7 @@ def api_run_simulation():
         
         results.append({
             "instr": ac.instr,
-            "addr": hex(ac.addr),
+            "addr": format_address(ac.addr, address_format),
             "l1": "HIT" if l1_hit else "MISS",
             "l2": "HIT" if l2_hit else "MISS",
         })
@@ -954,5 +1216,146 @@ def api_hierarchy_demo():
     return jsonify({"ok": True, **out})
 
 
+# --- Hack Converter ---
+
+@app.post("/api/convert-hack")
+def api_convert_hack():
+    """
+    Convert Hack assembly code (nand2tetris) to memory access sequences.
+    
+    POST body:
+    {
+        "hack_code": "string containing Hack assembly code"
+    }
+    
+    Returns:
+    {
+        "ok": true/false,
+        "sequences": ["Read 4 0x0", "Write 4 0x10", ...],
+        "sequence_text": "Read 4 0x0\nWrite 4 0x10\n...",
+        "count": number of sequences,
+        "error": "error message if ok=false"
+    }
+    """
+    username, role = require_auth(request)
+    if not username:
+        return jsonify({"ok": False, "error": "Authentication required"}), 401
+    
+    data = request.get_json(force=True, silent=True) or {}
+    hack_code = data.get("hack_code") or ""
+    
+    if not hack_code.strip():
+        return jsonify({"ok": False, "error": "Hack code is empty"}), 400
+    
+    success, sequences, error_msg = convert_hack_to_sequence(hack_code)
+    
+    if not success:
+        return jsonify({
+            "ok": False,
+            "error": error_msg,
+            "sequences": [],
+            "count": 0
+        }), 400
+    
+    sequence_text = "\n".join(sequences)
+    
+    return jsonify({
+        "ok": True,
+        "sequences": sequences,
+        "sequence_text": sequence_text,
+        "count": len(sequences),
+        "error": ""
+    })
+
+
+@app.post("/api/convert-hack-file")
+def api_convert_hack_file():
+    """
+    Convert Hack assembly file (nand2tetris) to memory access sequences.
+    
+    Accepts multipart/form-data with file upload.
+    
+    Form data:
+    - file: .asm or .hack file containing Hack assembly code
+    
+    Returns:
+    {
+        "ok": true/false,
+        "sequences": ["Read 4 0x0", "Write 4 0x10", ...],
+        "sequence_text": "Read 4 0x0\nWrite 4 0x10\n...",
+        "count": number of sequences,
+        "filename": original filename,
+        "error": "error message if ok=false"
+    }
+    """
+    username, role = require_auth(request)
+    if not username:
+        return jsonify({"ok": False, "error": "Authentication required"}), 401
+    
+    # Check if file was uploaded
+    if 'file' not in request.files:
+        return jsonify({
+            "ok": False,
+            "error": "No file uploaded. Use 'file' field in form-data"
+        }), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({"ok": False, "error": "No file selected"}), 400
+    
+    # Validate file extension
+    allowed_extensions = {'.asm', '.hack', '.txt'}
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in allowed_extensions:
+        return jsonify({
+            "ok": False,
+            "error": f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+        }), 400
+    
+    # Read file content
+    try:
+        hack_code = file.read().decode('utf-8')
+    except UnicodeDecodeError:
+        return jsonify({
+            "ok": False,
+            "error": "File must be text encoded in UTF-8"
+        }), 400
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"Failed to read file: {str(e)}"
+        }), 500
+    
+    if not hack_code.strip():
+        return jsonify({
+            "ok": False,
+            "error": "File is empty"
+        }), 400
+    
+    # Convert
+    success, sequences, error_msg = convert_hack_to_sequence(hack_code)
+    
+    if not success:
+        return jsonify({
+            "ok": False,
+            "error": error_msg,
+            "sequences": [],
+            "count": 0,
+            "filename": file.filename
+        }), 400
+    
+    sequence_text = "\n".join(sequences)
+    
+    return jsonify({
+        "ok": True,
+        "sequences": sequences,
+        "sequence_text": sequence_text,
+        "count": len(sequences),
+        "filename": file.filename,
+        "error": ""
+    })
+
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False, use_reloader=False)
