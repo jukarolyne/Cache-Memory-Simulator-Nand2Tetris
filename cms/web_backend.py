@@ -64,76 +64,216 @@ Access = namedtuple("Access", ["instr", "size", "addr"])
 # ---------------------------------------------------------------------------
 
 class HackConverter:
-    """Converts Hack assembly code to memory access sequences."""
+    """Converte codigo de linguagem assembly para sequencias de acesso de memoria com suporte a loop"""
     
     def __init__(self):
-        self.current_addr = 0
         self.sequences = []
+        self.symbol_table = {}  # mapa de labels/variables para enderecos
+        self.memory = {}  # simulacao RAM
+        self.registers = {"A": 0, "D": 0}  # registradores A e D 
+        self.max_iterations = 10000  # previne loops infinitos
+        self.iteration_count = 0
     
     def parse_hack_code(self, code: str) -> List[str]:
         """
-        Parse Hack assembly and generate memory sequences.
-        
-        Returns list of strings in format: "Read 4 0xADDR" or "Write 4 0xADDR"
+        Hack assembly com suporte a loop e geracao de sequencias de memoria.
+        simula a execucao e acesso a faixas de memoria.
+        retorna uma listra de strings em formato: "Read 4 ADDR" or "Write 4 ADDR"
         """
         self.sequences = []
         lines = code.split('\n')
+        clean_lines = []
         
+        # limpa as linhas e extrai os labels
         for line in lines:
-            # Clean line
             line = line.strip()
-            
-            # Remove comments
             if '//' in line:
                 line = line.split('//')[0].strip()
-            
-            # Skip empty lines
             if not line:
                 continue
             
-            # Handle A-instruction: @value
-            if line.startswith('@'):
-                try:
-                    # Extract the value (can be decimal or symbol)
-                    value_str = line[1:].strip()
-                    # Try to parse as hex or decimal
-                    if value_str.lower().startswith('0x'):
-                        self.current_addr = int(value_str, 16)
-                    else:
-                        # Try decimal first, then assume it's a symbol reference (use as decimal)
-                        self.current_addr = int(value_str, 10)
-                except ValueError:
-                    # If not a number, treat as symbol (default to 0 or skip)
-                    continue
+            # (LABELS)
+            if line.startswith('(') and line.endswith(')'):
+                label = line[1:-1].strip()
+                self.symbol_table[label] = len(clean_lines)
                 continue
             
-            # Handle C-instruction (dest=comp;jump)
-            # Format: [dest=]comp[;jump]
-            
-            # Check for memory operations
-            if 'M' in line:
-                # Memory write: M=... (something writes to memory)
-                if '=' in line:
-                    dest_part = line.split('=')[0].strip()
-                    if 'M' in dest_part:
-                        # This is M=something (write to memory)
-                        self.sequences.append(f"Write 4 {self.current_addr}")
-                        continue
-                
-                # Memory read: something=M (something reads from memory)
-                if '=' in line:
-                    comp_part = line.split('=')[1].split(';')[0].strip()
-                    if 'M' in comp_part:
-                        # This is dest=M (read from memory)
-                        self.sequences.append(f"Read 4 {self.current_addr}")
-                        continue
+            clean_lines.append(line)
         
+        # atribuir endereços as variaveis e executar
+        var_address = 16  # as variaveis começam no endereço 16 no Hack
+        pc = 0 
+        
+        # pre-processar para endereços de variaveis
+        for line in clean_lines:
+            if line.startswith('@'):
+                value_str = line[1:].strip()
+                # se eh um simbolo, nao um numero, atribui-lo em um endereco
+                if not value_str.isdigit() and value_str not in self.symbol_table:
+                    self.symbol_table[value_str] = var_address
+                    var_address += 1
+        
+        # executar simulacao
+        while pc < len(clean_lines) and self.iteration_count < self.max_iterations:
+            self.iteration_count += 1
+            line = clean_lines[pc]
+            
+            # instrucao-A: @valor
+            if line.startswith('@'):
+                value_str = line[1:].strip()
+                try:
+                    if value_str.lower().startswith('0x'):
+                        self.registers["A"] = int(value_str, 16)
+                    elif value_str.isdigit():
+                        self.registers["A"] = int(value_str)
+                    else:
+                        self.registers["A"] = self.symbol_table.get(value_str, 0)
+                except ValueError:
+                    self.registers["A"] = 0
+                pc += 1
+                continue
+            
+            # instrucao-C: dest=comp;jump
+            dest = ""
+            comp = line
+            jump = ""
+            
+            if '=' in line:
+                dest, comp = line.split('=', 1)
+                dest = dest.strip()
+            
+            if ';' in comp:
+                comp, jump = comp.split(';')
+                comp = comp.strip()
+                jump = jump.strip()
+            else:
+                comp = comp.strip()
+            
+            # salva valor
+            comp_value = self._compute(comp)
+            
+            # guarda no destino
+            if dest:
+                if 'A' in dest:
+                    self.registers["A"] = comp_value
+                if 'D' in dest:
+                    self.registers["D"] = comp_value
+                if 'M' in dest:
+                    # Write para memoria com endereco A
+                    addr = self.registers["A"]
+                    self.memory[addr] = comp_value
+                    self.sequences.append(f"Write 4 {addr}")
+            
+            # jump
+            if jump:
+                jumped = self._check_jump(comp_value, jump)
+                if jumped:
+                    # Jump para endereco guardado no registrador A 
+                    pc = self.registers["A"]
+                    # checagem de seguranca para evitar loops infinitos
+                    if pc >= len(clean_lines):
+                        pc = len(clean_lines)
+                else:
+                    pc += 1
+            else:
+                pc += 1
         return self.sequences
+    
+    def _compute(self, comp: str) -> int:
+        """avalia uma expressao computacional."""
+        comp = comp.strip()
+        
+        # leitura de memoria
+        if comp == 'M':
+            addr = self.registers["A"]
+            self.sequences.append(f"Read 4 {addr}")
+            return self.memory.get(addr, 0)
+        
+        # operacoes nos registradores
+        if comp == 'D':
+            return self.registers["D"]
+        if comp == 'A':
+            return self.registers["A"]
+        if comp == '0':
+            return 0
+        if comp == '1':
+            return 1
+        if comp == '-1':
+            return -1
+        
+        # aritmetico
+        if '+' in comp:
+            parts = comp.split('+')
+            left = self._get_value(parts[0].strip())
+            right = self._get_value(parts[1].strip())
+            return left + right
+        if '-' in comp and not comp.startswith('-'):
+            parts = comp.split('-')
+            left = self._get_value(parts[0].strip())
+            right = self._get_value(parts[1].strip())
+            return left - right
+        
+        # operacoes bit a bit
+        if '&' in comp:
+            parts = comp.split('&')
+            left = self._get_value(parts[0].strip())
+            right = self._get_value(parts[1].strip())
+            return left & right
+        if '|' in comp:
+            parts = comp.split('|')
+            left = self._get_value(parts[0].strip())
+            right = self._get_value(parts[1].strip())
+            return left | right
+        if '!' in comp:
+            val = self._get_value(comp[1:].strip())
+            return ~val & 0xFFFF  # 16-bit NOT
+        
+        return 0
+    
+    def _get_value(self, expr: str) -> int:
+        """Pega o valor do registrador ou da memoria."""
+        expr = expr.strip()
+        if expr == 'D':
+            return self.registers["D"]
+        if expr == 'A':
+            return self.registers["A"]
+        if expr == 'M':
+            addr = self.registers["A"]
+            self.sequences.append(f"Read 4 {addr}")
+            return self.memory.get(addr, 0)
+        if expr == '0':
+            return 0
+        if expr == '1':
+            return 1
+        if expr == '-1':
+            return -1
+        try:
+            return int(expr)
+        except ValueError:
+            return 0
+    
+    def _check_jump(self, value: int, jump_type: str) -> bool:
+        """Checa se a condição de jump é conhecida."""
+        if jump_type == "JMP":
+            return True
+        if jump_type == "JEQ":
+            return value == 0
+        if jump_type == "JNE":
+            return value != 0
+        if jump_type == "JLT":
+            return value < 0
+        if jump_type == "JLE":
+            return value <= 0
+        if jump_type == "JGT":
+            return value > 0
+        if jump_type == "JGE":
+            return value >= 0
+        return False
 
 
 def convert_hack_to_sequence(hack_code: str) -> Tuple[bool, List[str], str]:
     """
-    Converte o código Hack para sequencia de memoria
+    Converte o codigo Hack para sequencia de memoria
     
     Retornar (sucesso, sequencia, mensagem_erro)
     """
@@ -1218,4 +1358,4 @@ def api_convert_hack_file():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False, use_reloader=False)

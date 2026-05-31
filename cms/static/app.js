@@ -78,6 +78,9 @@ function setupLogin() {
         authToken = data.token;
         currentRole = data.role;
         currentUser = data.username;
+        localStorage.setItem("authToken", authToken);
+        localStorage.setItem("currentRole", currentRole);
+        localStorage.setItem("currentUser", currentUser);
         const userInfo = document.getElementById("user-info");
         if(userInfo) userInfo.textContent = `${currentUser} (${currentRole})`;
         
@@ -138,6 +141,9 @@ function setupLogout() {
       authToken = null;
       currentRole = null;
       currentUser = null;
+      localStorage.removeItem("authToken");
+      localStorage.removeItem("currentRole");
+      localStorage.removeItem("currentUser");
       switchView("login-view");
     });
   }
@@ -645,6 +651,19 @@ function animateNeon() {
 // ----------------------------------------------------
 
 window.addEventListener("DOMContentLoaded", () => {
+  // Restore token from localStorage if available
+  authToken = localStorage.getItem("authToken");
+  currentRole = localStorage.getItem("currentRole");
+  currentUser = localStorage.getItem("currentUser");
+  
+  // Update UI if already logged in
+  if (authToken) {
+    const userInfo = document.getElementById("user-info");
+    if (userInfo) userInfo.textContent = `${currentUser} (${currentRole})`;
+    setTabs(currentRole);
+    switchView("main-view");
+  }
+  
   setupLogin();
   setupLogout();
   setupTabs();
