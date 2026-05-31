@@ -180,7 +180,7 @@ O simulador irá:
 
 Na aba **Results**, você verá:
 
-- **Hit Rate:** Percentual de hits (quanto mais alto, melhor!)
+- **Hit Rate:** Percentual de hits
 - **Miss Rate:** Percentual de misses
 - **Total Hits:** Número total de hits
 - **Total Misses:** Número total de misses
